@@ -47,3 +47,5 @@ Luego visita `http://localhost:3000`.
 - 3 vidas con invencibilidad temporal al reaparecer (parpadeo)
 - Asteroides se parten en fragmentos más pequeños al ser destruidos
 - Partículas de explosión al destruir asteroides
+- Power-up **Disparo Triple**: algunos asteroides sueltan un orbe celeste; al recogerlo la nave dispara 3 balas en abanico durante 10 segundos (recoger otro suma 10 s más); el efecto se pierde al morir o al pasar de nivel
+- Power-up **Escudo Temporal**: orbe verde que rodea la nave con un círculo de energía durante 5 segundos; absorbe un impacto de asteroide al tocar el círculo (el asteroide se destruye y suma puntos) y luego desaparece; también se pierde al morir o al pasar de nivel

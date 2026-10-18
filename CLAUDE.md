@@ -34,4 +34,4 @@ The file is organized top-to-bottom in sections marked by `// ── Name ──
 
 ## Note
 
-The README mentions power-ups and special asteroid types (e.g. "estrella fugaz"), but these are **not implemented** in `game.js` yet.
+Power-ups: two are implemented, both via the `PowerUp` class with a `type` (`'triple' | 'shield'`, colors in `POWERUP_COLORS`), dropped 50/50 with `POWERUP_DROP_CHANCE` by `destroyAsteroid()` (shared by bullet and shield hits). **Disparo Triple** sets `ship.tripleShot` for `TRIPLE_DURATION` s (stacks on repeat pickups). **Escudo Temporal** sets `ship.shield = SHIELD_DURATION` (refreshes, doesn't stack); collision uses `SHIELD_RADIUS` (the visible circle, checked even while `invincible > 0`); on contact it destroys the asteroid, drops to 0 and grants `SHIELD_GRACE` s of `invincible`. Both are lost on death; `nextLevel()` resets them and clears leftover `powerUps`, so each level starts with no power-up. Other power-ups and special asteroid types mentioned in the README (e.g. "estrella fugaz") are **not implemented** yet.
