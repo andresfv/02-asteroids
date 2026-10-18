@@ -126,13 +126,15 @@ const TRIPLE_SPREAD       = 0.22;  // separación angular del abanico (rad)
 const SHIELD_DURATION     = 5;     // segundos de escudo temporal (o hasta recibir un golpe)
 const SHIELD_RADIUS       = 24;    // radio del círculo de energía alrededor de la nave
 const SHIELD_GRACE        = 1;     // invencibilidad tras absorber un impacto (evita morir con los fragmentos)
-const POWERUP_COLORS      = { triple: '#4df', shield: '#7f7' };
+const NOVA_DROP_SHARE     = 0.1;   // fracción de los power-ups soltados que son Bomba Nova (ítem escaso)
+const NOVA_WAVE_TIME      = 0.8;   // segundos de la onda expansiva (retrasa el paso de nivel)
+const POWERUP_COLORS      = { triple: '#4df', shield: '#7f7', nova: '#f8c' };
 
 class PowerUp {
   constructor(x, y, type) {
     this.x = x;
     this.y = y;
-    this.type = type;   // 'triple' | 'shield'
+    this.type = type;   // 'triple' | 'shield' | 'nova'
     const angle = rand(0, Math.PI * 2);
     const speed = rand(15, 35);
     this.vx = Math.cos(angle) * speed;
@@ -173,7 +175,7 @@ class PowerUp {
         ctx.moveTo(0, 4);
         ctx.lineTo(Math.cos(a) * 7, 4 + Math.sin(a) * 9);
       }
-    } else {
+    } else if (this.type === 'shield') {
       // Icono: mini nave dentro de un anillo
       ctx.moveTo(0, -4);
       ctx.lineTo(-3, 3);
@@ -181,6 +183,13 @@ class PowerUp {
       ctx.closePath();
       ctx.moveTo(6.5, 0);
       ctx.arc(0, 0, 6.5, 0, Math.PI * 2);
+    } else {
+      // Icono: estallido de 8 rayos
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        ctx.moveTo(Math.cos(a) * 2, Math.sin(a) * 2);
+        ctx.lineTo(Math.cos(a) * 7, Math.sin(a) * 7);
+      }
     }
     ctx.stroke();
     ctx.restore();
@@ -192,6 +201,7 @@ class Ship {
   constructor() {
     this.tripleShot = 0;   // tiempo restante de disparo triple (se pierde al morir o al pasar de nivel)
     this.shield     = 0;   // tiempo restante de escudo temporal (ídem; también se pierde al absorber un golpe)
+    this.nova       = false;  // Bomba Nova guardada, lista para detonar con B (máx. 1; ídem)
     this.reset();
   }
 
@@ -331,6 +341,7 @@ let ship, bullets, asteroids, particles, powerUps;
 let score, lives, level;
 let state;      // 'playing' | 'dead' | 'gameover'
 let deadTimer;
+let novaWave;   // onda expansiva de la Bomba Nova: null | { x, y, t }
 
 function spawnAsteroids(count) {
   const SAFE_DIST = 130;
@@ -354,6 +365,7 @@ function initGame() {
   lives  = 3;
   level  = 1;
   state  = 'playing';
+  novaWave = null;
   spawnAsteroids(4);
 }
 
@@ -362,8 +374,10 @@ function nextLevel() {
   bullets   = [];
   particles = [];
   powerUps  = [];
+  novaWave  = null;
   ship.tripleShot = 0;   // cada nivel comienza sin power-ups
   ship.shield     = 0;
+  ship.nova       = false;
   ship.reset();
   spawnAsteroids(3 + level);
 }
@@ -379,7 +393,24 @@ function destroyAsteroid(a, newAsteroids) {
   explode(a.x, a.y, a.size * 5);
   newAsteroids.push(...a.split());
   if (Math.random() < POWERUP_DROP_CHANCE)
-    powerUps.push(new PowerUp(a.x, a.y, Math.random() < 0.5 ? 'triple' : 'shield'));
+    powerUps.push(new PowerUp(a.x, a.y, randomPowerUpType()));
+}
+
+// La Bomba Nova es escasa; el resto se reparte 50/50 entre triple y escudo
+function randomPowerUpType() {
+  if (Math.random() < NOVA_DROP_SHARE) return 'nova';
+  return Math.random() < 0.5 ? 'triple' : 'shield';
+}
+
+// Aniquila todos los asteroides en pantalla (sin fragmentos ni power-ups) y lanza la onda expansiva
+function detonateNova() {
+  ship.nova = false;
+  for (const a of asteroids) {
+    score += POINTS[a.size];
+    explode(a.x, a.y, a.size * 5);
+  }
+  asteroids = [];
+  novaWave  = { x: ship.x, y: ship.y, t: 0 };
 }
 
 function killShip() {
@@ -387,6 +418,7 @@ function killShip() {
   ship.dead = true;
   ship.tripleShot = 0;
   ship.shield     = 0;
+  ship.nova       = false;
   lives--;
   if (lives <= 0) {
     state = 'gameover';
@@ -421,6 +453,10 @@ function update(dt) {
     bullets.push(...ship.tryShoot());
   }
 
+  // Detonar Bomba Nova
+  if (pressed('KeyB') && ship.nova) detonateNova();
+  if (novaWave && (novaWave.t += dt) >= NOVA_WAVE_TIME) novaWave = null;
+
   ship.update(dt);
   bullets.forEach(b => b.update(dt));
   asteroids.forEach(a => a.update(dt));
@@ -450,8 +486,10 @@ function update(dt) {
       p.dead = true;
       if (p.type === 'triple')
         ship.tripleShot = Math.max(ship.tripleShot, 0) + TRIPLE_DURATION;  // se acumula
-      else
+      else if (p.type === 'shield')
         ship.shield = SHIELD_DURATION;  // recarga, no se acumula
+      else
+        ship.nova = true;               // máximo una guardada
       explode(p.x, p.y, 6);
     }
   }
@@ -477,8 +515,8 @@ function update(dt) {
     if (a) killShip();
   }
 
-  // Nivel completado
-  if (asteroids.length === 0) nextLevel();
+  // Nivel completado (se espera a que termine la onda de la Bomba Nova)
+  if (asteroids.length === 0 && !novaWave) nextLevel();
 }
 
 // ── Draw ──────────────────────────────────────────────────────────────────────
@@ -528,6 +566,29 @@ function drawHUD() {
     ctx.fillRect(14, y + 6, 110 * Math.min(t / max, 1), 3);
     y += 24;
   }
+  if (ship.nova) {
+    ctx.fillStyle = POWERUP_COLORS.nova;
+    ctx.fillText('NOVA  [B]', 14, y);
+  }
+}
+
+// Onda expansiva de la Bomba Nova: destello blanco breve + anillo que cubre toda la pantalla
+function drawNovaWave() {
+  if (!novaWave) return;
+  const k = novaWave.t / NOVA_WAVE_TIME;
+  ctx.save();
+  if (novaWave.t < 0.15) {
+    ctx.globalAlpha = 0.5 * (1 - novaWave.t / 0.15);
+    ctx.fillStyle   = '#fff';
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.globalAlpha = 1 - k;
+  ctx.strokeStyle = POWERUP_COLORS.nova;
+  ctx.lineWidth   = 3;
+  ctx.beginPath();
+  ctx.arc(novaWave.x, novaWave.y, k * Math.hypot(W, H), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawOverlay(title, sub) {
@@ -549,6 +610,7 @@ function draw() {
   powerUps.forEach(p => p.draw());
   bullets.forEach(b => b.draw());
   ship.draw();
+  drawNovaWave();
 
   drawHUD();
 
